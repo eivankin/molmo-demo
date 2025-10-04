@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  molmo-demo:
+    build: .
+    ports:
+      - "7860:7860"
+    environment:
+      - DEVICE=cpu  # Change to 'cuda' or 'cuda:0' for GPU
+      - HF_HOME=/cache/huggingface
+    volumes:
+      - ${HOME}/.cache/huggingface/:/cache/huggingface/
+    # Uncomment for running on GPU:
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: [ gpu ]
