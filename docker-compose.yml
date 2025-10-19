@@ -8,8 +8,9 @@ services:
     environment:
       - DEVICE=cpu  # Change to 'cuda' or 'cuda:0' for GPU
       - HF_HOME=/cache/huggingface
+      - GRADIO_DEFAULT_CONCURRENCY_LIMIT=${GRADIO_DEFAULT_CONCURRENCY_LIMIT:-1}
     volumes:
-      - ${HOME}/.cache/huggingface/:/cache/huggingface/
+      - ${DOCKER_HF_CACHE_PATH:-$HOME/.cache/huggingface}:/cache/huggingface/
     # Uncomment for running on GPU:
 #    deploy:
 #      resources:

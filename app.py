@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from enum import StrEnum
+import threading
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
@@ -20,6 +21,11 @@ logger = logging.getLogger(__name__)
 DEVICE = os.getenv("DEVICE", "cpu")
 logger.info(f"Using device: {DEVICE}")
 
+MAX_CONCURRENCY = int(os.getenv("GRADIO_DEFAULT_CONCURRENCY_LIMIT", 1))
+logger.info(f"default_concurrency_limit={MAX_CONCURRENCY}")
+
+MODEL_LOCK = threading.Lock()
+
 
 def load_model():
     """Load the model and processor"""
@@ -31,7 +37,7 @@ def load_model():
         device_map=DEVICE,
     )
 
-    logger.info("Loading model... This might take some time...")
+    logger.info("Loading model... This might take a few minutes...")
     model = AutoModelForCausalLM.from_pretrained(
         "allenai/MolmoE-1B-0924",
         trust_remote_code=True,
@@ -161,26 +167,27 @@ def create_demo_image(image_url: PointingDemoImages | DescriptionDemoImages):
 def generate_response(image, prompt, task_type):
     """Generate response from the model based on task type"""
     try:
-        inputs = processor.process(images=[image], text=prompt)
+        with MODEL_LOCK:
+            inputs = processor.process(images=[image], text=prompt)
 
-        inputs = {k: v.to(model.device).unsqueeze(0) for k, v in inputs.items()}
+            inputs = {k: v.to(model.device).unsqueeze(0) for k, v in inputs.items()}
 
-        output = model.generate_from_batch(
-            inputs,
-            GenerationConfig(max_new_tokens=200, stop_strings="<|endoftext|>"),
-            tokenizer=processor.tokenizer,
-        )
+            output = model.generate_from_batch(
+                inputs,
+                GenerationConfig(max_new_tokens=200, stop_strings="<|endoftext|>"),
+                tokenizer=processor.tokenizer,
+            )
 
-        generated_tokens = output[0, inputs["input_ids"].size(1) :]
-        generated_text = processor.tokenizer.decode(
-            generated_tokens, skip_special_tokens=True
-        )
+            generated_tokens = output[0, inputs["input_ids"].size(1) :]
+            generated_text = processor.tokenizer.decode(
+                generated_tokens, skip_special_tokens=True
+            )
 
-        if task_type == "pointing":
-            coordinates = extract_pointing_coordinates(generated_text, image)
-            return generated_text, coordinates
-        else:
-            return generated_text, None
+            if task_type == "pointing":
+                coordinates = extract_pointing_coordinates(generated_text, image)
+                return generated_text, coordinates
+            else:
+                return generated_text, None
 
     except Exception as e:
         return f"Error: {str(e)}", None
@@ -312,6 +319,7 @@ with gr.Blocks(title="Molmo Multi-Modal Demo") as demo:
     )
 
 if __name__ == "__main__":
+    # GRADIO_DEFAULT_CONCURRENCY_LIMIT env var sets the limit, no need to pass it explicitly
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
